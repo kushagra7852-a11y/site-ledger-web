@@ -43,9 +43,9 @@
 
   /* ---------- Firebase project settings (from firebase-config.js, or pasted once on this device) ---------- */
   function parseConfig(text) {
-    const t = String(text || "");
+    const t = String(text || "").replace(/[\u201C\u201D\u201E\u2033]/g, '"').replace(/[\u2018\u2019\u2032]/g, "'").replace(/\u00A0/g, " ");
     try { const j = JSON.parse(t); if (j && j.apiKey && j.projectId) return j; } catch {}
-    const o = {}; ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId", "measurementId"].forEach((k) => { const m = t.match(new RegExp(k + "\\s*:\\s*[\"'`]([^\"'`]+)[\"'`]")); if (m) o[k] = m[1]; });
+    const o = {}; ["apiKey", "authDomain", "projectId", "storageBucket", "messagingSenderId", "appId", "measurementId"].forEach((k) => { const m = t.match(new RegExp("[\"']?" + k + "[\"']?\\s*:\\s*[\"'`]([^\"'`]+)[\"'`]")); if (m) o[k] = m[1]; });
     return o.apiKey && o.projectId ? o : null;
   }
   function savedConfig() {
@@ -56,7 +56,7 @@
     await whenBody();
     return new Promise((res) => {
       const el = screen(`<h1>Connect your Firebase project</h1><p>One-time setup on this phone. In Firebase console → Project settings → Your apps → Web app, copy the <b>firebaseConfig</b> block and paste it here.</p>
-        <label for="slb-cfg">firebaseConfig</label><textarea id="slb-cfg" placeholder='const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "….firebaseapp.com",\n  projectId: "…",\n  …\n};'></textarea>
+        <label for="slb-cfg">firebaseConfig</label><textarea id="slb-cfg" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder='const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "….firebaseapp.com",\n  projectId: "…",\n  …\n};'></textarea>
         <div class="slb-row"><button class="slb-btn pri" id="slb-go">Save and continue</button></div><div class="slb-msg" id="slb-m"></div>`);
       el.querySelector("#slb-go").onclick = () => { const c = parseConfig(el.querySelector("#slb-cfg").value); if (!c) { el.querySelector("#slb-m").className = "slb-msg err"; el.querySelector("#slb-m").textContent = "Couldn't read apiKey and projectId — paste the whole firebaseConfig block."; return; } localStorage.setItem(CFG_KEY, JSON.stringify(c)); closeScreen(); res(c); };
     });

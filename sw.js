@@ -1,5 +1,5 @@
 /* Site Ledger offline cache: app shell first, then libraries and reference data as they are used. */
-const V = "sl-1794728192", SHELL = ["./", "index.html", "bridge.js", "firebase-config.js", "manifest.webmanifest", "lib/firebase-app-compat.js", "lib/firebase-auth-compat.js", "lib/firebase-firestore-compat.js", "dar2023.json", "spec2019.json", "refs/index.json", "icons/icon-192.png"];
+const V = "sl-1794783401", SHELL = ["./", "index.html", "bridge.js", "firebase-config.js", "manifest.webmanifest", "lib/firebase-app-compat.js", "lib/firebase-auth-compat.js", "lib/firebase-firestore-compat.js", "dar2023.json", "spec2019.json", "refs/index.json", "icons/icon-192.png"];
 self.addEventListener("install", (e) => { e.waitUntil(caches.open(V).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting())); });
 self.addEventListener("activate", (e) => { e.waitUntil(caches.keys().then((ks) => Promise.all(ks.filter((k) => k !== V).map((k) => caches.delete(k)))).then(() => self.clients.claim())); });
 self.addEventListener("fetch", (e) => {
