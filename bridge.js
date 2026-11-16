@@ -57,9 +57,50 @@
     return new Promise((res) => {
       const el = screen(`<h1>Connect your Firebase project</h1><p>One-time setup on this phone. In Firebase console → Project settings → Your apps → Web app, copy the <b>firebaseConfig</b> block and paste it here.</p>
         <label for="slb-cfg">firebaseConfig</label><textarea id="slb-cfg" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" placeholder='const firebaseConfig = {\n  apiKey: "…",\n  authDomain: "….firebaseapp.com",\n  projectId: "…",\n  …\n};'></textarea>
-        <div class="slb-row"><button class="slb-btn pri" id="slb-go">Save and continue</button></div><div class="slb-msg" id="slb-m"></div>`);
+        <div class="slb-row"><button class="slb-btn pri" id="slb-go">Save and continue</button></div><div class="slb-msg" id="slb-m"></div>
+        <div style="border-top:1px solid #DBE0E8;margin:18px 0 0;padding-top:14px"><p><b>No Firebase yet?</b> Start now on this phone only — no login, works offline. Team sync can be added later (Backup → Restore).</p>
+        <div class="slb-row"><button class="slb-btn" id="slb-loc">Use on this phone only</button></div></div>`);
+      el.querySelector("#slb-loc").onclick = () => { try { localStorage.setItem(MODE_KEY, "local"); } catch {} location.reload(); };
       el.querySelector("#slb-go").onclick = () => { const c = parseConfig(el.querySelector("#slb-cfg").value); if (!c) { el.querySelector("#slb-m").className = "slb-msg err"; el.querySelector("#slb-m").textContent = "Couldn't read apiKey and projectId — paste the whole firebaseConfig block."; return; } localStorage.setItem(CFG_KEY, JSON.stringify(c)); closeScreen(); res(c); };
     });
+  }
+
+  /* ---------- phone-only mode: the same Firestore calls, kept in this phone's storage (IndexedDB) ---------- */
+  const MODE_KEY = "sl.mode", isLocal = () => { try { return localStorage.getItem(MODE_KEY) === "local"; } catch { return false; } };
+  async function localFirebase() {
+    const idb = await new Promise((res, rej) => { const r = indexedDB.open("site-ledger-local", 1); r.onupgradeneeded = () => r.result.createObjectStore("docs"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error || new Error("Phone storage not available")); });
+    const store = new Map();
+    await new Promise((res, rej) => { const t = idb.transaction("docs", "readonly"), os = t.objectStore("docs"), c = os.openCursor(); c.onsuccess = () => { const k = c.result; if (k) { store.set(k.key, k.value); k.continue(); } else res(); }; c.onerror = () => rej(c.error); });
+    try { navigator.storage && navigator.storage.persist && navigator.storage.persist(); } catch {}
+    const put = (k, v) => new Promise((res, rej) => { const t = idb.transaction("docs", "readwrite"); v === undefined ? t.objectStore("docs").delete(k) : t.objectStore("docs").put(v, k); t.oncomplete = res; t.onerror = () => rej(t.error || new Error("Phone storage is full")); t.onabort = () => rej(t.error || new Error("Phone storage is full")); });
+    const subs = new Set(), clone = (x) => (x === undefined ? undefined : JSON.parse(JSON.stringify(x)));
+    const merge = (a, b) => { const o = { ...(a || {}) }; Object.entries(b).forEach(([k, v]) => { o[k] = v && typeof v === "object" && !Array.isArray(v) && o[k] && typeof o[k] === "object" && !Array.isArray(o[k]) ? merge(o[k], v) : v; }); return o; };
+    let pending = 0; const fire = () => { if (pending++) return; setTimeout(() => { pending = 0; subs.forEach((s) => s.run()); }, 0); };
+    const meta = { fromCache: true, hasPendingWrites: false };
+    const dsnap = (path) => ({ id: path.split("/").pop(), exists: store.has(path), data: () => clone(store.get(path)), metadata: meta, ref: docRef(path) });
+    const qsnap = (path) => { const pre = path + "/", docs = [...store.keys()].filter((k) => k.startsWith(pre) && !k.slice(pre.length).includes("/")).sort().map(dsnap); return { docs, size: docs.length, empty: !docs.length, metadata: meta, docChanges: () => docs.map((d) => ({ type: "added", doc: d })) }; };
+    const write = async (path, v) => { if (v === undefined) store.delete(path); else store.set(path, v); fire(); await put(path, v); };
+    function docRef(path) {
+      return { id: path.split("/").pop(), path,
+        get: async () => dsnap(path),
+        set: (d, o) => write(path, clone(o && o.merge ? merge(store.get(path), d) : d)),
+        update: (d) => write(path, clone(merge(store.get(path), d))),
+        delete: () => write(path, undefined),
+        onSnapshot: (fn) => { const s = { run: () => fn(dsnap(path)) }; subs.add(s); setTimeout(s.run, 0); return () => subs.delete(s); },
+        collection: (c) => colRef(path + "/" + c) };
+    }
+    function colRef(path) {
+      const q = { get: async () => qsnap(path), onSnapshot: (a, b) => { const fn = typeof a === "function" ? a : b; const s = { run: () => fn(qsnap(path)) }; subs.add(s); setTimeout(s.run, 0); return () => subs.delete(s); } };
+      q.where = q.orderBy = q.limit = () => q;
+      return { id: path.split("/").pop(), path, doc: (id) => docRef(path + "/" + (id || Date.now().toString(36) + Math.random().toString(36).slice(2, 10))), ...q };
+    }
+    const fs = { settings() {}, enablePersistence: async () => {}, collection: colRef, doc: docRef };
+    const user = { uid: "local", email: "this-phone@local" };
+    const auth = { currentUser: user, setPersistence: async () => {}, onAuthStateChanged: (f) => { setTimeout(() => f(user), 0); return () => {}; }, signOut: async () => {} };
+    const app = { options: { projectId: "this phone only" } };
+    const F = { apps: [app], app: () => app, initializeApp: () => app, firestore: () => fs, auth: () => auth };
+    F.auth.Auth = { Persistence: { LOCAL: "local" } };
+    return F;
   }
 
   /* ---------- sign in ---------- */
@@ -183,16 +224,17 @@
   }
 
   /* ---------- start ---------- */
-  let TEAM = null, AUTH = null;
+  let TEAM = null, AUTH = null, FB = null;
   const ready = (async () => {
-    if (!window.firebase) throw new Error("Firebase libraries missing");
-    let cfg = savedConfig(); if (!cfg) cfg = await askConfig();
-    const app = firebase.apps.length ? firebase.app() : firebase.initializeApp(cfg);
-    const fs = firebase.firestore();
+    if (isLocal()) FB = await localFirebase();
+    else { if (!window.firebase) throw new Error("Firebase libraries missing"); FB = window.firebase; }
+    let cfg = isLocal() ? {} : savedConfig(); if (!cfg) cfg = await askConfig();
+    const app = FB.apps.length ? FB.app() : FB.initializeApp(cfg);
+    const fs = FB.firestore();
     try { fs.settings({ ignoreUndefinedProperties: true, merge: true }); } catch {}
     try { await fs.enablePersistence({ synchronizeTabs: true }); } catch (e) { /* another tab or unsupported — online only */ }
-    const auth = firebase.auth(); AUTH = auth;
-    try { await auth.setPersistence(firebase.auth.Auth.Persistence.LOCAL); } catch {}
+    const auth = FB.auth(); AUTH = auth;
+    try { await auth.setPersistence(FB.auth.Auth.Persistence.LOCAL); } catch {}
     let user = await new Promise((r) => { const un = auth.onAuthStateChanged((u) => { un(); r(u); }); });
     if (!user) user = await askLogin(auth);
     FS = fs; ME = user;
@@ -202,7 +244,7 @@
     whenBody().then(addAccountButton);
     return { fs, auth, user, app };
   })();
-  ready.catch(async (e) => { await whenBody(); screen(`<h1>Couldn't start</h1><p>${esc(e && e.message || e)}</p><div class="slb-row"><button class="slb-btn pri" onclick="location.reload()">Try again</button><button class="slb-btn" id="slb-reset">Change Firebase project</button></div>`).querySelector("#slb-reset").onclick = () => { localStorage.removeItem(CFG_KEY); location.reload(); }; });
+  ready.catch(async (e) => { await whenBody(); screen(`<h1>Couldn't start</h1><p>${esc(e && e.message || e)}</p><div class="slb-row"><button class="slb-btn pri" onclick="location.reload()">Try again</button><button class="slb-btn" id="slb-reset">Change Firebase project</button></div>`).querySelector("#slb-reset").onclick = () => { localStorage.removeItem(CFG_KEY); localStorage.removeItem(MODE_KEY); location.reload(); }; });
 
   /* ---------- account menu (sign out, team members, Firebase project) ---------- */
   function addAccountButton() {
@@ -213,7 +255,18 @@
   }
   function openMenu() {
     const own = TEAM && TEAM.owner === String(ME.email || "").toLowerCase();
-    const m = h(`<div class="slb-menu"><div class="slb-sheet"><h3>${esc(ME.email)}</h3><div class="sub">${own ? "Owner" : "Team member"} · Firebase project ${esc(firebase.app().options.projectId)} · app ${VERSION}${navigator.onLine ? "" : " · offline — entries will sync when online"}</div>
+    if (isLocal()) {
+      const m = h(`<div class="slb-menu"><div class="slb-sheet"><h3>This phone only</h3><div class="sub">Data is kept on this phone (no login, no team sync) · app ${VERSION}. Take a backup every week — if the phone is lost or the browser data is cleared, the backup is the only copy.</div>
+        <button class="it" data-a="bk">Backup / restore all data (All projects)</button>
+        <button class="it" data-a="fb">Connect Firebase for team sync…</button>
+        <button class="it" data-a="x">Close</button></div></div>`);
+      m.onclick = (ev) => { const a = ev.target.dataset && ev.target.dataset.a; if (ev.target === m || a === "x") return m.remove();
+        if (a === "bk") { m.remove(); location.hash = "portfolio"; }
+        if (a === "fb") { m.remove(); const el = screen(`<h1>Connect Firebase</h1><p>1. First take <b>⬇ Backup all data</b> (All projects).</p><p>2. Continue → paste your firebaseConfig → Create account.</p><p>3. Then <b>⬆ Restore backup</b> with that file. Data on this phone stays as it is until then.</p><div class="slb-row"><button class="slb-btn pri" id="slb-go">Continue</button><button class="slb-btn" id="slb-cl">Cancel</button></div>`);
+          el.querySelector("#slb-cl").onclick = closeScreen; el.querySelector("#slb-go").onclick = () => { try { localStorage.removeItem(MODE_KEY); } catch {} location.reload(); }; } };
+      document.body.appendChild(m); return;
+    }
+    const m = h(`<div class="slb-menu"><div class="slb-sheet"><h3>${esc(ME.email)}</h3><div class="sub">${own ? "Owner" : "Team member"} · Firebase project ${esc(FB.app().options.projectId)} · app ${VERSION}${navigator.onLine ? "" : " · offline — entries will sync when online"}</div>
       ${own ? `<button class="it" data-a="team">Team members (who can open this ledger)</button>` : ""}
       <button class="it" data-a="bk">Backup / restore all data (All projects)</button>
       <button class="it" data-a="out">Sign out</button>
