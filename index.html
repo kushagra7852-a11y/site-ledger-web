@@ -1151,8 +1151,10 @@ function buildDocs(bill){
       lt("","Gross deduction / withheld from current bill","",calc.M,"M = J+K+L"),lt("","Net payment against current bill","",calc.N,"N = I−M"),lt("","Net payment rounded","",calc.O,"O"),lt("","Release of previous withheld","",calc.P,"P"),lt("","Net payment amount","",calc.Q,"Q = O+P")],{num:[3]}),
     P_(`Net payable: ${inWords(calc.Q)}`,{bold:true}),SIGN(contractorSign(),engSign())]};
   const idx=bill.idx||{}, pages=bill.pages||{};
+  /* the index says "Submitted" only for documents ticked to go with this bill */
+  const PK=S.rb&&S.rb.pick&&S.rb.pickFor===bill.id?S.rb.pick:null, encl=k=>!PK||(k==="muster"?[...PK].some(x=>x.startsWith("muster_")):k==="completion"?PK.has("completion")||PK.has("completionhoe"):PK.has(k));
   docs.index={title:"Index of bill documents",group:"Bill",blocks:[H(final?"FINAL BILL":bill.billNo.toUpperCase(),{center:true}),P_(`Project name: ${p.name||""}`,{bold:true}),
-    TB([["S.No.","Description","Page No.","Remark"]],INDEX_ITEMS.map(([d,k],i)=>[i+1,d,pages[i]||"",idx[i]!=null?idx[i]:autoRemark(k,final)||wfRemark(d)]),{fs:INDEX_ITEMS.length>36?(CT().lhMode==="Uploaded letterhead image"&&CT().lhImg?15:17):19})],small:true}; /* image letterheads are taller — keep the index on one page */
+    TB([["S.No.","Description","Page No.","Remark"]],INDEX_ITEMS.map(([d,k],i)=>[i+1,d,pages[i]||"",idx[i]!=null?idx[i]:k&&!/^(eot|eotapp)$/.test(k)&&!encl(k)?"":autoRemark(k,final)||wfRemark(d)]),{fs:INDEX_ITEMS.length>36?(CT().lhMode==="Uploaded letterhead image"&&CT().lhImg?15:17):19})],small:true}; /* image letterheads are taller — keep the index on one page */
   /* statements */
   const cem=cons.filter(r=>classifyMat(r.name)==="cement"), cemQtl=cem.reduce((s,r)=>s+toQtl(r.q,r.unit),0), cemBags=cemQtl*2;
   const cemRecv=receivedBetween(e=>isCem(String(e.material||"").split("__")[0]),"",bill.billDate);
