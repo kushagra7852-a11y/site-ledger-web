@@ -1152,7 +1152,7 @@ function buildDocs(bill){
     P_(`Net payable: ${inWords(calc.Q)}`,{bold:true}),SIGN(contractorSign(),engSign())]};
   const idx=bill.idx||{}, pages=bill.pages||{};
   docs.index={title:"Index of bill documents",group:"Bill",blocks:[H(final?"FINAL BILL":bill.billNo.toUpperCase(),{center:true}),P_(`Project name: ${p.name||""}`,{bold:true}),
-    TB([["S.No.","Description","Page No.","Remark"]],INDEX_ITEMS.map(([d,k],i)=>[i+1,d,pages[i]||"",idx[i]!=null?idx[i]:autoRemark(k,final)||wfRemark(d)]),{fs:INDEX_ITEMS.length>36?17:19})],small:true};
+    TB([["S.No.","Description","Page No.","Remark"]],INDEX_ITEMS.map(([d,k],i)=>[i+1,d,pages[i]||"",idx[i]!=null?idx[i]:autoRemark(k,final)||wfRemark(d)]),{fs:INDEX_ITEMS.length>36?(CT().lhMode==="Uploaded letterhead image"&&CT().lhImg?15:17):19})],small:true}; /* image letterheads are taller — keep the index on one page */
   /* statements */
   const cem=cons.filter(r=>classifyMat(r.name)==="cement"), cemQtl=cem.reduce((s,r)=>s+toQtl(r.q,r.unit),0), cemBags=cemQtl*2;
   const cemRecv=receivedBetween(e=>isCem(String(e.material||"").split("__")[0]),"",bill.billDate);
@@ -1341,7 +1341,7 @@ async function packDocx(list){
   const AL={right:AlignmentType.RIGHT,center:AlignmentType.CENTER,justify:AlignmentType.JUSTIFIED};
   const runs=(t,o)=>[...(o.lead?[new TextRun({text:o.lead,bold:true,size:o.size,font:FONT})]:[]),...String(t??"").split("\n").flatMap((ln,i)=>[...(i?[new TextRun({break:1})]:[]),new TextRun({text:ln,bold:!!o.bold,italics:!!o.it,size:o.size,color:o.color,underline:o.underline?{}:undefined,font:FONT})])];
   const para=(t,o={})=>new Paragraph({alignment:AL[o.al]||AlignmentType.LEFT,indent:o.indent?{firstLine:567}:undefined,spacing:{before:o.before||0,after:o.after??100},keepNext:!!o.keepNext,border:o.border,children:runs(t,o)});
-  const gap=(a=80,kn)=>new Paragraph({spacing:{after:a},keepNext:!!kn,children:[]});
+  const gap=(a=80,kn)=>{ const g=new Paragraph({spacing:{after:a},keepNext:!!kn,children:[]}); g.__gap=true; return g; };
   const cell=(t,o={})=>new TableCell({width:o.w?{size:o.w,type:WidthType.DXA}:undefined,columnSpan:o.span>1?o.span:undefined,verticalAlign:o.va||VerticalAlign.TOP,
     shading:o.fill?{type:ShadingType.CLEAR,color:"auto",fill:o.fill}:undefined,margins:{top:25,bottom:25,left:o.mg??60,right:o.mg??60},children:[para(cellTxt(t),{al:o.al,bold:o.bold,it:o.it,size:o.size,after:0,keepNext:!!o.kn})]});
   const hdrRow=(r,cws,fs,mg)=>{ const kids=[]; r.forEach((x,j)=>{ if(x===null) return; let k=1; while(r[j+k]===null) k++; kids.push(cell(x,{w:cws.slice(j,j+k).reduce((a,b)=>a+b,0),span:k,bold:true,al:"center",fill:"DCE6F2",size:fs,va:VerticalAlign.CENTER,mg:mg&&j>=mg.from?mg.v:undefined})); }); return new TableRow({tableHeader:true,cantSplit:true,children:kids}); };
@@ -1394,6 +1394,7 @@ async function packDocx(list){
         rows:[new TableRow({cantSplit:true,children:[new TableCell({width:{size:hw,type:WidthType.DXA},children:[para(b.sign[0]||"",{size:bs,after:0})]}),new TableCell({width:{size:CW-hw,type:WidthType.DXA},children:[para(b.sign[1]||"",{al:"right",size:bs,after:0})]})]})]})); }
       else if(b.table) ch.push(...docTable(b.table,CW,d.landscape?1:0,{kn,form:d.form}));
     });
+    while(ch.length>1&&ch[ch.length-1].__gap) ch.pop(); /* no blank spacer at the end — it can push an empty page */
     return {properties:{page:{size:d.landscape?{orientation:PageOrientation.LANDSCAPE,width:11906,height:16838}:{width:11906,height:16838},margin:{top:780,bottom:700,left:M,right:M,header:300,footer:300},pageNumbers:{start:1}}},
       headers:{default:d.letterhead?header(d):new Header({children:[new Paragraph({spacing:{after:0},children:[]})]})},footers:{default:footer(d)},children:ch.length?ch:[gap()]}; });
   return Packer.toBlob(new Document({creator:CT().cName||"Site Ledger",title:((proj()||{}).name||"Bill")+" documents",styles:{default:{document:{run:{font:FONT,size:22}}}},sections}));
@@ -3458,13 +3459,13 @@ async function backupAll(withMedia=true,prog=()=>{}){ const out={app:"site-ledge
   try{ const lib=await S.db.collection("library/dar2023/items").get(); lib.docs.forEach(d=>put("library/dar2023/items/"+d.id,d.data())); }catch{}
   let n=0; for(const pd of top.docs){ prog(`Reading ${++n}/${top.docs.length}: ${String(pd.data().name||pd.id).slice(0,40)}`);
     for(const c of BK_SUB){ const cs=await S.db.collection(`projects/${pd.id}/${c}`).get(); for(const d of cs.docs){ put(`projects/${pd.id}/${c}/${d.id}`,d.data()); const sc=BK_SUB2[c]; if(sc){ const ss=await S.db.collection(`projects/${pd.id}/${c}/${d.id}/${sc}`).get(); ss.docs.forEach(x=>put(`projects/${pd.id}/${c}/${d.id}/${sc}/${x.id}`,x.data())); } } } }
-  if(withMedia){ const urls=new Set(); const walk=v=>{ if(Array.isArray(v)) v.forEach(walk); else if(v&&typeof v==="object"){ if(typeof v.url==="string"&&v.url&&!/^data:/.test(v.url)) urls.add(v.url); Object.values(v).forEach(walk); } }; Object.values(out.docs).forEach(walk);
+  if(withMedia){ const urls=new Set(); const walk=v=>{ if(Array.isArray(v)) v.forEach(walk); else if(v&&typeof v==="object"){ if(typeof v.url==="string"&&v.url&&!/^data:/.test(v.url)) urls.add(v.url); Object.values(v).forEach(walk); } else if(typeof v==="string"&&v.length<500&&/^fsmedia:|\/_blob\/[\w-]+$/.test(v)) urls.add(v); }; /* letterhead images are kept as plain url strings */ Object.values(out.docs).forEach(walk);
     let k=0; for(const u of urls){ prog(`Photos & files ${++k}/${urls.size}`); try{ const r=await fetch(u); if(!r.ok) continue; const b=await r.blob(); const buf=new Uint8Array(await b.arrayBuffer()); let bin=""; for(let i=0;i<buf.length;i+=32768) bin+=String.fromCharCode.apply(null,buf.subarray(i,i+32768)); out.media[u]={type:b.type||"application/octet-stream",b64:btoa(bin)}; }catch{} } }
   return out; }
 async function restoreAll(B,prog=()=>{}){ if(!B||B.app!=="site-ledger"||!B.docs) throw new Error("Not a Site Ledger backup file");
   const map={}; const M=Object.entries(B.media||{}); let k=0;
   if(M.length&&S.assets) for(const [u,m] of M){ prog(`Uploading photos & files ${++k}/${M.length}`); try{ const bin=atob(m.b64), a=new Uint8Array(bin.length); for(let i=0;i<bin.length;i++) a[i]=bin.charCodeAt(i); const r=await S.assets.upload(new Blob([a],{type:m.type})); map[u]={id:r.id,url:r.url}; }catch{} }
-  const fix=v=>Array.isArray(v)?v.map(fix):(v&&typeof v==="object")?(()=>{ const o={}; Object.entries(v).forEach(([kk,x])=>o[kk]=fix(x)); if(typeof o.url==="string"&&map[o.url]){ const nw=map[o.url]; o.url=nw.url; if("id" in o) o.id=nw.id; } return o; })():v;
+  const fix=v=>typeof v==="string"&&map[v]?map[v].url:Array.isArray(v)?v.map(fix):(v&&typeof v==="object")?(()=>{ const o={}; Object.entries(v).forEach(([kk,x])=>o[kk]=fix(x)); if(typeof o.url==="string"&&map[o.url]){ const nw=map[o.url]; o.url=nw.url; if("id" in o) o.id=nw.id; } return o; })():v;
   const E=Object.entries(B.docs).sort((a,b)=>a[0].split("/").length-b[0].split("/").length); let n=0;
   for(let i=0;i<E.length;i+=8){ await Promise.all(E.slice(i,i+8).map(([p,d])=>S.db.doc(p).set(fix(d)))); n=Math.min(E.length,i+8); prog(`Writing ${n}/${E.length} records`); }
   return {docs:E.length,media:Object.keys(map).length}; }
