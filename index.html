@@ -1781,7 +1781,7 @@ function vProgress(v){
     ${recent.length?`<div class="recent">${recent.map(d=>{ const val=Object.entries(d.qty||{}).reduce((s,[k,q])=>{ const b=S.boq.find(x=>x.id===k); return s+(b?num(q)*num(b.rate):0); },0); return `<div class="r" data-pglog="${esc(d.id)}"><span class="mono faint">${fmtD(d.id)}</span><span class="x">${dayStat(d).nil?`<span class="pill ${dayStat(d).hind?"bad":"info"}">${esc(dayStat(d).short)}</span> `:""}<b style="font-weight:500">${Object.keys(d.qty||{}).length} item${Object.keys(d.qty||{}).length===1?"":"s"}</b> <span class="faint">· ${num(d.skilled)+num(d.unskilled)} labour${d.note?" · "+esc(d.note):""}</span></span><span class="mono">${inr0(val)}</span></div>`; }).join("")}</div>`:`<p class="muted" style="margin:0">Each evening, record the quantity done today for each item. Progress, S-curve and profit update from it, and the RA bill can be filled from it.</p>`}</div>
     <div class="panel"><div class="vhead" style="margin-bottom:6px"><h3>Hindrances & EOT</h3><span class="faint" style="font-size:12px">Hindrance register → EOT letter, Part I, bar chart</span></div>
     ${(()=>{ const E=eotCalc(), N=eotNeed(E.req), to=N.upto; return `<div class="calc" style="margin-bottom:8px;font-size:13px">${CT().actualCompletion?"Completed "+fmtD(CT().actualCompletion):"Running work"} · stipulated completion ${fmtD(E.doc)}${CT().eotUpto?` · EOT granted up to ${fmtD(CT().eotUpto)}`:""} · net hindrance <b>${E.req} days</b> → extension needed up to ${fmtD(N.to)||"—"}${to?` · <b>apply ${N.now} days, up to ${fmtD(to)}</b>`:N.net?" · covered by EOT already granted":""}${E.H.some(h=>h.cont)?` <span class="pill warn">continuing — counted to today</span>`:""}</div>
-    <div class="toolbar" style="margin:0 0 8px;flex-wrap:wrap;gap:6px"><span class="lbl">EOT pack</span><button class="btn sm pri" type="button" data-eotp="docx">Word</button><button class="btn sm" type="button" data-eotp="xlsx">Excel</button><button class="btn sm" type="button" data-eotp="html">Print</button><button class="btn sm" type="button" data-eotp="p1">Part I only</button><button class="btn sm" type="button" data-eotp="bar">Bar chart only</button>${S.canWrite?`<button class="btn sm" type="button" data-eotp="letter">Save as letter…</button>`:""}</div>`; })()}
+    <div class="toolbar" style="margin:0 0 8px;flex-wrap:wrap;gap:6px"><span class="lbl">EOT pack</span><button class="btn sm pri" type="button" data-eotp="docx">Word</button><button class="btn sm" type="button" data-eotp="xlsx">Excel</button><button class="btn sm pri" type="button" data-eotp="anx">EOT analysis (Excel)</button><button class="btn sm" type="button" data-eotp="html">Print</button><button class="btn sm" type="button" data-eotp="p1">Part I only</button><button class="btn sm" type="button" data-eotp="bar">Bar chart only</button>${S.canWrite?`<button class="btn sm" type="button" data-eotp="letter">Save as letter…</button>`:""}</div>`; })()}
     ${HD.length?HD.map((h,i)=>`<div class="chk"><span class="sev med"></span><div><div class="t">${esc(h.nature||"Hindrance")}</div><div class="d">${hindWarn(h).length?`<span style="color:var(--margin)">⚠ ${esc(hindWarn(h).join("; "))}</span><br>`:""}${fmtD(h.from)} to ${h.to?fmtD(h.to):"continuing"} · ${h.from?daysBetween(h.from,h.to||CT().actualCompletion||todayISO())+1:0} days${num(h.overlap)?` (overlap ${h.overlap})`:""}${h.remarks?" · "+esc(h.remarks):""}</div></div><div>${S.canWrite?`<button class="btn sm" type="button" data-pghind="${i}">Edit</button>`:""}</div></div>`).join(""):`<p class="muted" style="margin:0">No hindrances recorded.</p>`}</div></div>`;
   v.onclick=ev=>{ const a=ev.target.closest("[data-pg]")?.dataset.pg; if(a==="log"){ S.siteDate=todayISO(); location.hash="site"; } if(a==="hind") openHindForm(null);
     const ep=ev.target.closest("[data-eotp]")?.dataset.eotp; if(ep) doEotPack(ep);
@@ -1804,8 +1804,141 @@ function openProgressForm(date){
   dlg.showModal();
 }
 /* EOT pack for running or completed work: letter + Part I (format) + hindrance register + bar chart + annexures */
+/* ---------- EOT analysis workbook (format of Ranchi B.Wall EOT: Summary, Hindrance Analysis, Inputs, Chronology, Technical Observations) ---------- */
+async function eotXlsx(){
+  const XL=await loadExcel(), wb=new XL.Workbook(), E=eotCalc(), p=E.p, c=E.c, z=gccK()==="zmc", lt=c.ldType||(E.tv&&E.tv<=1e6?"a":"c");
+  const X=execMap().m, done=Math.round(S.boq.reduce((s,b)=>s+num(X[b.id])*num(b.rate),0)*100)/100;
+  const L=(S.letters||[]).filter(x=>x.type==="eot"&&x.status!=="Draft").sort((a,b)=>(a.sentDate||a.date||"").localeCompare(b.sentDate||b.date||"")).pop()||{};
+  const N=eotNeed(E.req), claimD=has(L.eotDays)&&L.eotDays!==""?num(L.eotDays):(N.now||E.req), claimTo=L.eotTo||N.upto||(E.doc?addDays(E.doc,claimD):"");
+  const DT=iso=>{ if(!iso) return null; const [y,m,d]=iso.split("-").map(Number); return new Date(Date.UTC(y,m-1,d)); };
+  const q=t=>String(t??"").replace(/"/g,'""');
+  const INR='[>=10000000]##\\,##\\,##\\,##0.00;[>=100000]##\\,##\\,##0.00;##,##0.00', INR0='[>=10000000]##\\,##\\,##\\,##0;[>=100000]##\\,##\\,##0;##,##0';
+  const F=(o={})=>({name:o.cal?"Calibri":"Arial",size:o.sz||(o.cal?11:9),bold:!!o.b,color:o.col?{argb:o.col}:undefined});
+  const put=(ws,a,v,o={})=>{ const x=ws.getCell(a); if(typeof v==="string"&&v.startsWith("=")) x.value={formula:v.slice(1)}; else x.value=v; x.font=F(o);
+    if(o.fill) x.fill={type:"pattern",pattern:"solid",fgColor:{argb:o.fill}}; if(o.nf) x.numFmt=o.nf;
+    x.alignment={horizontal:o.h,vertical:o.v||(o.wrap?"top":undefined),wrapText:!!o.wrap}; if(o.bd) x.border={top:{style:"thin"},left:{style:"thin"},bottom:{style:"thin"},right:{style:"thin"}}; return x; };
+  const cols=(ws,w)=>w.forEach((x,i)=>{ if(x) ws.getColumn(i+1).width=x; });
+  const rh=(ws,r,h)=>{ ws.getRow(r).height=h; };
+  const DF="dd.mm.yyyy", Y="FFFFFF00", HP="FFE6B8B7", BL="FFD9EAF7";
+  const H=E.H.length?E.H:[{nature:"(no hindrance recorded)",from:E.doc,toE:E.doc,net:0,ovl:0,wt:1,attr:"cwc"}], n=H.length, r0=9, rl=r0+n-1, T=rl+2, R=k=>T+k;
+  const act=E.act, fm=[], cw=[];
+  H.forEach((h,i)=>{ if(h.attr==="fm") fm.push(i); else if(h.attr!=="con") cw.push(i); });
+  const tl=k=>(htFind(H[k].type)||{}).l||attrL(H[k].attr);
+  const ws=wb.addWorksheet("EOT Summary"), wh=wb.addWorksheet("Hindrance Analysis"), wi=wb.addWorksheet("Inputs"), wc=wb.addWorksheet("Chronology"), wt=wb.addWorksheet("Technical Observations");
+
+  /* ---- Inputs ---- */
+  const ldLab=z?"LD rate per month (Clause 10, Vol-II GCC: by WO period)":`Compensation rate (GCC cl. 2.2(${lt}))`;
+  const IN=[["Field","Value"],["Contractor",c.cName||""],["Name of Work",p.name||""],["WO No. & Date",`${p.workOrderNo||c.loaNo||""}${c.woDate||c.loaDate?", DATED "+fmtD(c.woDate||c.loaDate):""}`],["DOS",DT(E.st)],["DOC",DT(E.doc)],["Contract Value",E.tv||0],["Actual Work Done",done||null],["Proposed EOT Upto","=B6+B15"],["Physical Progress %",c.actualCompletion?1:(E.tv?Math.min(1,Math.round(done/E.tv*100)/100):"To be confirmed")],["Deviation %",E.tv?Math.round(E.extraVal/E.tv*10000)/10000:0],["Total delay (days) – DOC to completion / proposed EOT","=B18-B6"],["Original Time Days","=B6-B5+1"],["EOT upto as written in application",DT(claimTo)],["EOT days claimed by contractor",claimD||0],["Actual date of completion",DT(c.actualCompletion)],["EOT application / clarification letter",L.ref?`Letter No. ${L.ref} dated ${fmtD(L.sentDate||L.date)}`:""],["Delay counted up to (actual completion if entered in B16, else proposed EOT in B9)","=IF(ISNUMBER(B16),B16,B9)"],
+    [ldLab,z?"=IF(B13<=61,0.05,IF(B13<=183,0.02,0.01))":(lt==="b"?0.005:0.01)],[z||lt==="c"?"Days per month (per-day computation of LD)":"Days per week (per week or part)",z||lt==="c"?30:7],["Maximum LD (% of WO value)",0.1],[z?"Base value for LD (WO value payable; replace with final bill value)":"Base value for compensation (Accepted Tendered Value – GCC cl. 2.1)",z?"=IF(B8>0,B8,B7)":"=B7"]];
+  IN.forEach((r,i)=>{ const rr=i+1; if(rr===1){ put(wi,"A1",r[0],{b:true,sz:10,col:"FFFFFFFF",fill:"FF1F4E78"}); put(wi,"B1",r[1],{b:true,sz:10,col:"FFFFFFFF",fill:"FF1F4E78"}); return; }
+    put(wi,"A"+rr,r[0],{cal:true}); const inp=[2,3,4,5,6,7,8,10,11,14,15,16,17].includes(rr);
+    put(wi,"B"+rr,r[1],{cal:rr!==2&&rr!==3,fill:inp?Y:undefined,wrap:rr<=3,nf:[5,6,9,14,16,18].includes(rr)?DF:[7,8,22].includes(rr)?"\\₹#,##0.00":[10,11,19,21].includes(rr)?(rr===19?"0.0%":"0%"):[12,13,15,20].includes(rr)?"0":undefined}); });
+  put(wi,"A24","Yellow cells are inputs; all other figures in the workbook are formula-driven.",{cal:true}); cols(wi,[38.1,95]); [3,18,19,22].forEach(r=>rh(wi,r,22.5));
+
+  /* ---- Hindrance Analysis ---- */
+  cols(wh,[46.4,60,12,null,null,null,null,16,null,11,12,60]);
+  wh.mergeCells(`A1:L1`); put(wh,"A1",`(TIME EXTENSION) - ${p.name||""}`,{b:true,h:"center",v:"middle"});
+  put(wh,"A2","DOS as per CA/LOA"); put(wh,"B2","=Inputs!B5",{nf:DF}); put(wh,"A3","DOC as per CA/LOA"); put(wh,"B3","=Inputs!B6",{nf:DF}); put(wh,"D3","Time Allowed"); put(wh,"E3","=Inputs!B13",{nf:"0"}); put(wh,"F3","Days");
+  put(wh,"A4","DOC Proposed/Actual"); put(wh,"B4","=Inputs!B9",{nf:DF}); put(wh,"A5","Delay"); put(wh,"B5","=Inputs!B12",{nf:"0"}); put(wh,"C5","days");
+  put(wh,"A7",`Hindrance register as per contractor's EOT application / Technical Check (${z?"GCC Sch-I cl. 13.4, Appendix T-II":"GCC cl. 5, Appendix T-II"})`);
+  ["S.No","Nature of Hindrance","From","To","Days of Delay","Overlap","Admissible","Contract Extended Upto","Admissible or Not","Weightage","Days Claimed by Contractor","Technical Check Remarks"].forEach((t,i)=>put(wh,String.fromCharCode(65+i)+"8",t,{b:true,fill:HP,h:"center",v:"middle",wrap:true})); rh(wh,8,22.5);
+  H.forEach((h,i)=>{ const r=r0+i, to=h.to||h.toE||act;
+    put(wh,"A"+r,i+1,{wrap:true}); put(wh,"B"+r,`${h.nature||""}${h.items?" – items held up: "+h.items:""}`,{wrap:true}); put(wh,"C"+r,DT(h.from),{nf:DF,wrap:true}); put(wh,"D"+r,DT(to),{nf:DF,wrap:true});
+    put(wh,"E"+r,`=D${r}-C${r}+1`,{fill:"FFF8CBAD",h:"center",v:"middle",wrap:true}); put(wh,"F"+r,h.ovl||0,{fill:"FFF8CBAD",h:"center",v:"middle",wrap:true});
+    put(wh,"G"+r,`=IF(I${r}="No",0,MIN(K${r},ROUND((E${r}-F${r})*J${r},0)))`,{fill:"FFF8CBAD",h:"center",v:"middle",wrap:true}); put(wh,"H"+r,i?`=H${r-1}+G${r}`:`=B3+G${r}`,{fill:"FFF8CBAD",nf:DF,h:"center",v:"middle",wrap:true});
+    put(wh,"I"+r,h.attr==="con"?"No":"Yes",{fill:Y,wrap:true}); put(wh,"J"+r,h.wt??1,{fill:Y,nf:"0%",wrap:true}); put(wh,"K"+r,has(h.claim)&&h.claim!==""?num(h.claim):(h.net||0),{fill:Y,wrap:true});
+    put(wh,"L"+r,[`[${tl(i)}]`,h.just,h.revRemarks,h.remarks].filter(Boolean).join(" "),{wrap:true}); rh(wh,r,Math.max(30,Math.ceil(Math.max(String(h.nature||"").length,String(h.just||"").length)/60)*12+6)); });
+  put(wh,"A"+T,"Total days of delay as per hindrance register / technical check",{b:true,fill:"FFF4B183",h:"center",v:"middle",wrap:true});
+  for(const k of "BCDFL") put(wh,k+T,null,{fill:"FFF4B183"});
+  put(wh,"E"+T,`=SUM(E${r0}:E${rl})`,{b:true,fill:"FFF4B183",h:"center",v:"middle"}); put(wh,"G"+T,`=SUM(G${r0}:G${rl})`,{b:true,fill:"FFF4B183",h:"center",v:"middle"}); put(wh,"H"+T,"Say",{b:true,fill:"FFF4B183",h:"center",v:"middle"});
+  put(wh,"I"+T,`=MIN(Inputs!B12,G${T})`,{b:true,fill:"FFF4B183",h:"center",v:"middle"}); put(wh,"J"+T,"Days",{b:true,fill:"FFF4B183",h:"center",v:"middle"}); put(wh,"K"+T,`=SUM(K${r0}:K${rl})`,{b:true,fill:"FFF4B183"}); rh(wh,T,42);
+  put(wh,"A"+R(2),"Technical check outcome",{b:true});
+  put(wh,"A"+R(3),"Total admissible justified days as per technical check",{b:true}); put(wh,"B"+R(3),`=I${T}`,{nf:"0",h:"left"});
+  put(wh,"A"+R(4),z?"Extra time allowed for additional/deviated work (%)":"Extra time for additional/deviated work (GCC cl. 12.1: deviation % × period + 25%)",{b:true}); put(wh,"B"+R(4),z?"=ROUND(Inputs!B11*Inputs!B13,0)":"=ROUND(Inputs!B11*Inputs!B13*1.25,0)",{nf:"0",h:"left"}); put(wh,"D"+R(4),"Deviation %"); put(wh,"E"+R(4),"=Inputs!B11",{nf:"0%"});
+  put(wh,"A"+R(5),"TOTAL JUSTIFIED DELAY",{b:true,fill:BL,h:"center",v:"middle"}); put(wh,"B"+R(5),`=MIN(Inputs!B12,B${R(3)}+B${R(4)})`,{b:true,fill:BL,nf:"0",h:"left"});
+  put(wh,"A"+R(6),"Unjustified delay",{b:true}); put(wh,"B"+R(6),`=MAX(Inputs!B12-B${R(5)},0)`,{nf:"0",h:"left"});
+  put(wh,"A"+R(7),"LD Amount (Rs.) – see LD computation below",{b:true}); put(wh,"B"+R(7),`=B${R(23)}`,{nf:"\\₹#,##0.00",h:"left"});
+  put(wh,"C"+R(7),`=IF(B${R(6)}>0,"LD leviable for "&B${R(6)}&" day(s) of unjustified delay under ${z?"Clause 10 of Vol-II Contract & GCC":"Clause 2 of GCC (compensation for delay)"}","Nil – delay fully justified")`);
+  put(wh,"A"+R(9),"Contract Value"); put(wh,"B"+R(9),"=Inputs!B7",{nf:"\\₹#,##0.00",h:"left"}); put(wh,"D"+R(9),"For 100% work"); put(wh,"E"+R(9),"=Inputs!B13",{nf:"0"}); put(wh,"F"+R(9),"Days");
+  put(wh,"A"+R(10),"For 10% work"); put(wh,"C"+R(10),`=E${R(9)}*10%`,{nf:"0.0"}); put(wh,"D"+R(10),"Days"); put(wh,"A"+R(11),"For Deviation %"); put(wh,"C"+R(11),`=E${R(9)}*Inputs!B11`,{nf:"0.0"}); put(wh,"D"+R(11),"Days");
+  wh.mergeCells(`A${R(13)}:B${R(13)}`); put(wh,"A"+R(13),z?"LIQUIDATED DAMAGES – Clause 10 of Vol-II Contract & GCC":"COMPENSATION FOR DELAY – Clause 2 of GCC",{b:true});
+  const LDR=[["Justified extended DOC (without LD) up to",`=Inputs!B6+B${R(5)}`,DF],["LD period: from",`=IF(B${R(6)}>0,B${R(14)}+1,"Nil")`,DF],["LD period: to",`=IF(B${R(6)}>0,Inputs!B18,"Nil")`,DF],["Unjustified delay (days)",`=B${R(6)}`,"0"],[z||lt==="c"?"LD rate per month":"LD rate per week or part","=Inputs!B19","0.0%"],[z||lt==="c"?"LD rate per day":"Weeks (or part) of delay",z||lt==="c"?`=B${R(18)}/Inputs!B20`:`=ROUNDUP(B${R(17)}/7,0)`,z||lt==="c"?"0.000%":"0"],["Base value for LD (Rs.)","=Inputs!B22","\\₹#,##0.00"],
+    [z||lt==="c"?"LD computed = days × rate per day × base value (Rs.)":"LD computed = weeks × rate per week × base value (Rs.)",`=B${R(17)}*0+B${R(19)}*${z||lt==="c"?`B${R(17)}`:`B${R(18)}`}*B${R(20)}`,"\\₹#,##0.00"],["Ceiling: 10% of WO value (Rs.)",`=Inputs!B21*Inputs!B22`,"\\₹#,##0.00"],["LD AMOUNT PROPOSED (Rs.)",`=ROUND(MIN(B${R(21)},B${R(22)}),0)`,"\\₹#,##0"],["LD as % of WO value",`=IF(Inputs!B7>0,B${R(23)}/Inputs!B7,0)`,"0.00%"],["EOT proposed up to (with LD for the period at Sl. above)","=Inputs!B18",DF]];
+  LDR.forEach(([a,f,nf],i)=>{ const r=R(14+i); put(wh,"A"+r,a,{b:r===R(23)}); put(wh,"B"+r,f,{nf,h:"left",b:r===R(23),fill:r===R(23)?BL:undefined}); });
+  if(z||lt==="c") wh.getCell("B"+R(21)).value={formula:`B${R(17)}*B${R(19)}*B${R(20)}`}; else wh.getCell("B"+R(21)).value={formula:`B${R(19)}*B${R(18)}*B${R(20)}`};
+  put(wh,"C"+R(21),z||lt==="c"?`=B${R(17)}&" day(s) × "&TEXT(B${R(19)},"0.000%")&" × Rs. "&TEXT(B${R(20)},"${INR}")`:`=B${R(19)}&" week(s) × "&TEXT(B${R(18)},"0.0%")&" × Rs. "&TEXT(B${R(20)},"${INR}")`);
+  put(wh,"C"+R(22),"Lower of computed LD and ceiling is proposed");
+  wh.pageSetup={orientation:"landscape",fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9};
+
+  /* ---- EOT Summary ---- */
+  ws.pageSetup={orientation:"portrait",fitToPage:true,fitToWidth:1,fitToHeight:0,paperSize:9}; cols(ws,[6,38,22,15,12,20,38,12]);
+  ["A1:H1","A2:H2","C4:H4","C5:H5","C6:H6","G7:H7","G8:H8","F10:H10","E11:H11","D13:H13","D14:H14","D15:H15","A16:B16","D16:H16","A17:B17","D17:H17","A18:B18","D18:H18","B19:H19"].forEach(m=>ws.mergeCells(m));
+  const HA="'Hindrance Analysis'!";
+  put(ws,"A1",`=IF(${HA}B${R(6)}>0,"(TIME EXTENSION WITH LEVY OF LIQUIDATED DAMAGES)","(TIME EXTENSION WITHOUT LEVY OF LIQUIDATED DAMAGES)")`,{b:true,sz:12,h:"center",v:"middle"});
+  put(ws,"A2","=Inputs!B3",{b:true,wrap:true});
+  const lab=(r,n,t)=>{ put(ws,"A"+r,n,{b:true,wrap:true,v:"top"}); put(ws,"B"+r,t,{b:true,wrap:true,v:"top"}); };
+  lab(4,"1","Name of the Contractor"); put(ws,"C4","=Inputs!B2",{wrap:true}); lab(5,"2","Name of Work"); put(ws,"C5","=Inputs!B3",{wrap:true}); lab(6,"3","WO No. & date"); put(ws,"C6","=Inputs!B4",{wrap:true});
+  lab(7,"4","Contract Period"); put(ws,"C7","From:",{b:true,wrap:true}); put(ws,"D7","=Inputs!B5",{b:true,fill:"FF92D050",nf:DF,h:"center",v:"middle",wrap:true}); put(ws,"E7","To:",{b:true,wrap:true}); put(ws,"F7","=Inputs!B6",{b:true,fill:"FF92D050",nf:DF,h:"center",v:"middle",wrap:true}); put(ws,"G7",`${E.per||""} days as per Work Order`,{wrap:true});
+  lab(8,"5","Time extn period proposed now"); put(ws,"C8","From:",{b:true,wrap:true}); put(ws,"D8","=Inputs!B6",{b:true,fill:"FF92D050",nf:DF,h:"center",v:"middle",wrap:true}); put(ws,"E8","To:",{b:true,wrap:true}); put(ws,"F8","=Inputs!B9",{b:true,fill:"FF92D050",nf:DF,h:"center",v:"middle",wrap:true}); put(ws,"G8","with delay analysis, hindrance record and contractor's EOT request attached under LR",{wrap:true});
+  lab(9,"6","Total Delay"); put(ws,"C9",null,{fill:"FFFCE4D6"}); put(ws,"D9","=Inputs!B12",{b:true,fill:"FFFCE4D6",nf:"0",h:"center",wrap:true}); put(ws,"E9",null,{fill:"FFFCE4D6"}); put(ws,"F9","days",{b:true,fill:"FFFCE4D6",h:"center",wrap:true});
+  lab(10,"7","Work Status (in '%' and physical progress):"); put(ws,"C10","%",{wrap:true}); put(ws,"D10","=Inputs!B10",{nf:"0%",wrap:true}); put(ws,"F10",c.actualCompletion?`Work completed on ${fmtD(c.actualCompletion)}.`:`Work in progress – value of work done Rs. ${inr0(done).replace("₹","")} (from site register / MB); to be confirmed from MB.`,{wrap:true});
+  lab(11,"8","Contract value"); put(ws,"C11","Rs.",{wrap:true}); put(ws,"D11","=Inputs!B7",{nf:"\\₹#,##0.00",wrap:true}); put(ws,"E11","as per Work Order",{wrap:true});
+  lab(12,"9","Detail of Delay");
+  const hd=z?["Delay due to Force Majeure / causes beyond control (Clause 13.4.1 of GCC)","Delay due to CWC / Site Front Non-availability (Clause 13.4.1(b)–(e) / 13.4.2)","Delay attributable to Contractor (Clause 13.4.5) – LD under Clause 10"]:["Delay due to Force Majeure / other causes (Clause 5.2 of GCC)","Delay due to CWC / Department (Clause 5.3)","Delay attributable to Contractor (Clause 5.5) – compensation under Clause 2"];
+  put(ws,"A13",null,{fill:HP}); put(ws,"B13",hd[0],{b:true,fill:HP,h:"center",v:"middle",wrap:true}); put(ws,"C13",hd[1],{b:true,fill:HP,h:"center",v:"middle",wrap:true}); put(ws,"D13",hd[2],{b:true,fill:HP,h:"center",v:"middle",wrap:true});
+  const rom=["i","ii","iii","iv","v","vi","vii","viii","ix","x"], txt=idx=>idx.length?"="+idx.map((k,j)=>`"(${rom[j]||j+1}) ${q(String(H[k].nature||"").slice(0,110))}: "&TEXT(${HA}C${r0+k},"dd.mm.yyyy")&" to "&TEXT(${HA}D${r0+k},"dd.mm.yyyy")`).join('&CHAR(10)&'):null;
+  put(ws,"B14",txt(fm)||"Nil",{wrap:true}); put(ws,"C14",txt(cw)||"Nil - site available; no hindrance attributable to CWC.",{wrap:true});
+  put(ws,"D14",`=IF(${HA}B${R(6)}>0,"Delay beyond justified extended date "&TEXT(${HA}B${R(14)},"dd.mm.yyyy")&" up to "&TEXT(Inputs!B18,"dd.mm.yyyy")&" – "&${HA}B${R(6)}&" day(s); LD leviable.","Nil attributable delay.")`,{wrap:true});
+  const sumG=idx=>idx.length?"=MIN(Inputs!B12,"+idx.map(k=>`${HA}G${r0+k}`).join("+")+")":0;
+  put(ws,"A15","Days",{b:true,fill:HP,h:"center",v:"middle",wrap:true}); put(ws,"B15",sumG(fm),{b:true,fill:HP,nf:"0",h:"center",v:"middle"}); put(ws,"C15",sumG(cw),{b:true,fill:HP,nf:"0",h:"center",v:"middle"}); put(ws,"D15",`=${HA}B${R(6)}`,{b:true,fill:HP,nf:"0",h:"center",v:"middle"});
+  put(ws,"A16","Total justified delay (EOT without LD)",{b:true,v:"middle",wrap:true}); put(ws,"C16",`=${HA}B${R(5)}`,{b:true,fill:BL,nf:"0",h:"center",v:"middle"}); put(ws,"D16","days",{b:true,v:"middle"});
+  put(ws,"A17","Unjustified delay (LD leviable)",{b:true,v:"middle",wrap:true}); put(ws,"C17",`=${HA}B${R(6)}`,{b:true,fill:BL,nf:"0",h:"center",v:"middle"}); put(ws,"D17","days",{b:true,v:"middle"});
+  put(ws,"A18","LD proposed (Rs.)",{b:true,v:"middle",wrap:true}); put(ws,"C18",`=${HA}B${R(23)}`,{b:true,fill:BL,nf:"\\₹#,##0",h:"center",v:"middle"});
+  put(ws,"D18",z||lt==="c"?`=IF(${HA}B${R(6)}>0,"@ "&TEXT(Inputs!B19,"0.0%")&" per month (per-day basis) × "&${HA}B${R(6)}&" day(s) ("&TEXT(${HA}B${R(15)},"dd.mm.yyyy")&" to "&TEXT(${HA}B${R(16)},"dd.mm.yyyy")&") on value Rs. "&TEXT(Inputs!B22,"${INR}")&"; ceiling "&TEXT(Inputs!B21,"0%")&" (${z?"Clause 10, Vol-II GCC":"GCC cl. 2.2(c), 2.3"})","Nil")`:`=IF(${HA}B${R(6)}>0,"@ "&TEXT(Inputs!B19,"0.0%")&" per week or part × "&${HA}B${R(19)}&" week(s) ("&TEXT(${HA}B${R(15)},"dd.mm.yyyy")&" to "&TEXT(${HA}B${R(16)},"dd.mm.yyyy")&") on Rs. "&TEXT(Inputs!B22,"${INR}")&"; ceiling "&TEXT(Inputs!B21,"0%")&" (GCC cl. 2.2(${lt}), 2.3)","Nil")`,{wrap:true,v:"middle"});
+  const nar=[`The subject work was awarded to ${c.cName||"the contractor"} vide ${p.workOrderNo?"Work Order No. "+p.workOrderNo:"work order"}${c.woDate||c.loaDate?" dated "+fmtD(c.woDate||c.loaDate):""} (contract value Rs. ${inr0(E.tv).replace("₹","")}) with a stipulated period of ${E.per} days, i.e. from ${fmtD(E.st)} to ${fmtD(E.doc)}.`,
+    c.actualCompletion?`The work was completed on ${fmtD(c.actualCompletion)}, a delay of ${E.delay} days.`:`The work is in progress; delay is assessed up to ${fmtD(E.act)} (${E.delay} days).`,
+    ...E.H.map(h=>`${h.nature} from ${fmtD(h.from)} to ${h.cont?"date (continuing)":fmtD(h.to)} (${h.net} net days${h.wt<1?`, weightage ${Math.round(h.wt*100)}%`:""}) – ${h.attr==="con"?"attributable to the contractor, not admitted":"admitted under "+((htFind(h.type)||{}).l||attrL(h.attr))}.`),
+    E.extraUse?`Extra time of ${E.extraUse} days is considered for additional / deviated work.`:"",
+    `Total justified delay works out to ${E.just} days${E.unj?`; the balance ${E.unj} days are attributable to the contractor, for which LD of Rs. ${inr0(E.ld).replace("₹","")} is leviable (${z?"Clause 10 of Vol-II GCC":"GCC cl. 2.2("+lt+")"})`:" and the EOT may be granted without levy of LD"}. Figures in this sheet are formula-driven from the Hindrance Analysis and Inputs sheets.`].filter(Boolean).join(" ");
+  put(ws,"A19","Narra-\ntion",{b:true,wrap:true,v:"top"}); put(ws,"B19",nar,{b:true,wrap:true,h:"justify",v:"top"}); put(ws,"G21","Concerned Engineer"); put(ws,"G22",c.seName||""); put(ws,"G23",c.seDesig||"");
+  [[1,15],[2,15],[4,18],[5,30],[6,30],[8,22.5],[10,45.75],[11,22.5],[13,48],[14,Math.max(60,Math.max(...[[fm,38],[cw,22]].map(([ix,w])=>ix.reduce((t,k)=>t+Math.ceil((String(H[k].nature||"").slice(0,110).length+30)/(w*1.15)),0)))*12+6)],[16,30],[17,22.5],[18,45],[19,Math.max(150,Math.ceil(nar.length/110)*12)]].forEach(([r,h])=>rh(ws,r,h));
+
+  /* ---- Chronology ---- */
+  cols(wc,[6,12,80,40]); wc.mergeCells("A1:D1"); put(wc,"A1",`CHRONOLOGY OF EVENTS - ${String(p.name||"").toUpperCase()} - EOT`,{b:true,sz:11});
+  ["S.No","Date","Event","Source (document on file)"].forEach((t,i)=>put(wc,String.fromCharCode(65+i)+"3",t,{b:true,fill:HP,h:"center",v:"middle",wrap:true,bd:true}));
+  const ev=[]; const A=(d,e,s,hl)=>{ if(d) ev.push({d,e,s,hl}); };
+  A(c.loaDate,"Letter of Award issued","LOA"); A(c.woDate,`Work Order issued to ${c.cName||"the contractor"}`,"Work order"); A(c.handover,"Site handed over","Handing over record"); A(E.st,"Date of start of work","Work order / site register",true); A(E.doc,"Stipulated date of completion","Work order",true);
+  E.H.forEach((h,i)=>{ A(h.from,`Hindrance ${i+1} begins – ${h.nature}`,"Hindrance register (Appendix T-II)"); if(h.noticeDate) A(h.noticeDate,`Contractor's notice of hindrance ${i+1}${h.noticeRef?" (letter "+h.noticeRef+")":""}`,"Contractor's letter"); if(h.to) A(h.to,`Hindrance ${i+1} removed – ${h.nature}`,"Hindrance register (Appendix T-II)"); });
+  (S.letters||[]).filter(x=>(x.type==="eot"||x.type==="peot"||x.type==="hind")&&x.status!=="Draft").forEach(x=>A(x.sentDate||x.date,`${x.subject||"Letter"}${x.ref?" – No. "+x.ref:""}`,"Letters register"));
+  if(c.eotUpto) A(c.eotUpto,"EOT granted earlier up to this date","Previous EOT"); A(c.actualCompletion,"Actual date of completion","Completion certificate",true);
+  const jd=E.doc?addDays(E.doc,E.just):""; if(jd) ev.push({d:jd,f:true});
+  ev.sort((a,b)=>a.d.localeCompare(b.d)).forEach((x,i)=>{ const r=4+i, fl=x.f||x.hl?BL:undefined;
+    put(wc,"A"+r,i+1,{wrap:true,bd:true,fill:fl}); put(wc,"B"+r,x.f?`=${HA}B${R(14)}`:DT(x.d),{nf:DF,wrap:true,bd:true,fill:fl});
+    put(wc,"C"+r,x.f?`="Justified extended date of completion (DOC + "&${HA}B${R(5)}&" days, without LD); delay beyond this up to "&TEXT(Inputs!B18,"dd.mm.yyyy")&" attracts LD"`:x.e,{wrap:true,bd:true,fill:fl}); put(wc,"D"+r,x.f?"Hindrance Analysis sheet":x.s,{wrap:true,bd:true,fill:fl}); if(String(x.e||"").length>85) rh(wc,r,24); });
+
+  /* ---- Technical Observations ---- */
+  cols(wt,[6,120]); wt.mergeCells("A1:B1"); put(wt,"A1","TECHNICAL CHECK - OBSERVATIONS FOR NOTING",{b:true,sz:11});
+  put(wt,"A3","S.No",{b:true,fill:HP,bd:true}); put(wt,"B3","Observation",{b:true,fill:HP,bd:true});
+  const ob=[];
+  E.H.forEach((h,i)=>{ const cl=has(h.claim)&&h.claim!==""?num(h.claim):null;
+    if(h.attr==="con") ob.push(`Hindrance ${i+1} (${h.nature}) is attributable to the contractor (${conCl()}) and is not admitted.`);
+    if(cl!=null&&cl!==h.net) ob.push(`Hindrance ${i+1}: calendar period ${h.days} days, overlap ${h.ovl}, net ${h.net} days; contractor has claimed ${cl} days. Admissible restricted to the lower figure.`);
+    if(h.ovl) ob.push(`Hindrance ${i+1}: ${h.ovl} day(s) overlap with an earlier hindrance deducted.`);
+    if(h.wt<1) ob.push(`Hindrance ${i+1}: weightage of ${Math.round(h.wt*100)}% adopted as only part of the work was held up${h.items?" ("+h.items+")":""}.`);
+    if(h.cont) ob.push(`Hindrance ${i+1} is continuing; period taken up to ${fmtD(E.act)}.`);
+    if(!h.noticeDate&&h.attr!=="con") ob.push(`Hindrance ${i+1}: date of the contractor's written notice is not recorded (${z?"GCC cl. 13.4.1 – within 7 days; force majeure within 48 hours, cl. 22.1":"GCC cl. 5.2 – within 30 days; cl. 5.4 – EOT request within 14 days"}). Notice may be placed on file.`);
+    if(!h.aeName&&!h.eeName) ob.push(`Hindrance ${i+1}: register entry not yet signed by AE / EE (Appendix T-II, columns 8 and 11).`); });
+  if(!c.actualCompletion) ob.push(`="Actual date of completion is to be filled in the Inputs sheet (B16). LD is presently worked out up to the proposed EOT date "&TEXT(Inputs!B9,"dd.mm.yyyy")&" ("&${HA}B${R(6)}&" day(s) beyond the justified date "&TEXT(${HA}B${R(14)},"dd.mm.yyyy")&" = Rs. "&TEXT(${HA}B${R(23)},"${INR0}")&"). If the actual completion date is entered, the delay and LD recalculate automatically."`);
+  ob.push(z?`="LD as per Clause 10 of Vol-II Contract & GCC (${q(c.nitRef||"ZMC tender")}): WO period "&Inputs!B13&" days – "&TEXT(Inputs!B19,"0%")&" per month of delay computed per day, on the WO value payable, subject to a ceiling of "&TEXT(Inputs!B21,"0%")&". Base value Rs. "&TEXT(Inputs!B22,"${INR}")&"; replace with the final bill value when available."`:`Compensation for delay as per GCC cl. 2.2(${lt}) – ${LDTXT[lt]}; ceiling 10% of the accepted tendered value (cl. 2.3). GST as applicable is payable by the contractor in addition.`);
+  ob.push(c.eotUpto?`EOT granted earlier up to ${fmtD(c.eotUpto)}${c.eotLD?" ("+c.eotLD+")":""}.`:"No previous EOT granted.");
+  if(E.extraUse) ob.push(`Additional / deviated work of Rs. ${inr0(E.extraVal).replace("₹","")} (${E.tv?Math.round(E.extraVal/E.tv*100):0}% of contract value) – ${E.extraUse} days considered.`);
+  ob.forEach((t,i)=>{ const r=4+i; put(wt,"A"+r,i+1,{wrap:true,bd:true}); put(wt,"B"+r,t,{wrap:true,bd:true}); rh(wt,r,t.length>230?36:t.length>115?24:15); });
+  return new Blob([await wb.xlsx.writeBuffer()],{type:"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"});
+}
+
 async function doEotPack(k){ if(k==="letter"){ openLetter(letterDraft("eot",null)); return; }
   if(!S.downloads){ toast("Downloads aren't available in this view."); return; }
+  if(k==="anx"){ try{ toast("Preparing EOT analysis…"); await S.downloads.save({filename:`${fnW((proj()||{}).name)} - EOT analysis.xlsx`,data:await eotXlsx()}); toast("File saved"); }catch(e){ if(!(e&&e.code==="declined")) toast(e&&e.message==="load"?"Couldn't load the Excel tool. Check your connection.":"Couldn't prepare the file."); } return; }
   const E=eotCalc(), l=letterDraft("eot",null), all=letterDoc(l), list=k==="p1"?[eotPart1Doc(l,E)]:k==="bar"?[eotBarDoc(E,l)]:all;
   const nm=`${fnW((proj()||{}).name)} - ${k==="p1"?"EOT Part I":k==="bar"?"EOT bar chart":"EOT application pack"}`;
   try{ if(k==="xlsx") await S.downloads.save({filename:nm+".xlsx",data:await packXlsx(all)});
@@ -1824,7 +1957,7 @@ function openHindForm(i){
   <div class="calc s4" id="h_calc" style="font-size:13px"></div>
   ${field("h_nd","Contractor's notice — date",h.noticeDate||"","date","")}${field("h_nr","Notice — letter no.",h.noticeRef||"","text","")}${field("h_ae","8. Recorded / signed by AE (name)",h.aeName||"","text","")}${field("h_aed","AE — date",h.aeDate||"","date","")}
   ${field("h_ee","11. Signed by EE (name)",h.eeName||"","text","")}${field("h_eed","EE — date",h.eeDate||"","date","")}${field("h_rv","12. Remarks of reviewing officer",h.revRemarks||"","text","s2")}
-  ${field("h_r","Remarks (site)",h.remarks||"","text","s2")}${field("h_ad","Days admitted (blank = net × weightage; 0 if contractor's)",has(h.adm)?h.adm:"","number","s2")}
+  ${field("h_r","Remarks (site)",h.remarks||"","text","s2")}${field("h_cl","Days claimed by contractor (EOT application)",has(h.claim)?h.claim:"","number","")}${field("h_ad","Days admitted (blank = auto)",has(h.adm)?h.adm:"","number","")}
   <label class="f s4" for="h_j">Justification (for EOT noting)<textarea id="h_j" rows="2">${esc(h.just||"")}</textarea></label></div>
   <div class="df">${i!=null?`<button class="btn danger" type="button" data-act="del">Delete</button>`:""}<div class="r"><button class="btn" type="button" data-act="close">Cancel</button><button class="btn pri" type="submit">Save</button></div></div></form>`;
   const F=$("#hForm"), save=async arr=>{ const d={...p,hindr:arr}; delete d.id; try{ await S.db.doc(`projects/${p.id}`).set(d); dlg.close(); toast("Hindrance register updated"); }catch(e){ toast(saveErr(e)); } };
@@ -1836,7 +1969,7 @@ function openHindForm(i){
   F.addEventListener("click",ev=>{ const a=ev.target.closest("[data-act]")?.dataset.act; if(a==="close") dlg.close(); if(a==="del"){ H.splice(i,1); save(H); } });
   F.addEventListener("submit",ev=>{ ev.preventDefault(); const t=htFind($("#h_ty").value)||htypes()[0], ns=$("#h_ns").value, det=$("#h_dt").value.trim();
     const nature=ns===H_OTHER||!ns?det:(det?`${ns} — ${det}`:ns);
-    const n={...h,type:t.k,attr:t.a,natSel:ns,detail:det,nature,items:$("#h_i").value.trim(),from:$("#h_f").value,to:$("#h_t").value,overlap:$("#h_o").value===""?0:num($("#h_o").value),ovMan:$("#h_o").value!=="",ovAuto:$("#h_o").value==="",remarks:$("#h_r").value.trim(),wt:$("#h_w").value===""?"":wtNorm($("#h_w").value),adm:$("#h_ad").value===""?"":num($("#h_ad").value),just:$("#h_j").value.trim(),
+    const n={...h,type:t.k,attr:t.a,natSel:ns,detail:det,nature,items:$("#h_i").value.trim(),from:$("#h_f").value,to:$("#h_t").value,overlap:$("#h_o").value===""?0:num($("#h_o").value),ovMan:$("#h_o").value!=="",ovAuto:$("#h_o").value==="",remarks:$("#h_r").value.trim(),wt:$("#h_w").value===""?"":wtNorm($("#h_w").value),adm:$("#h_ad").value===""?"":num($("#h_ad").value),claim:$("#h_cl").value===""?"":num($("#h_cl").value),just:$("#h_j").value.trim(),
       noticeDate:$("#h_nd").value,noticeRef:$("#h_nr").value.trim(),aeName:$("#h_ae").value.trim(),aeDate:$("#h_aed").value,eeName:$("#h_ee").value.trim(),eeDate:$("#h_eed").value,revRemarks:$("#h_rv").value.trim()};
     if(!nature||!n.from){ toast(!nature?"Select the nature of hindrance (or write it in details).":"Add the date of start."); return; } if(n.to&&n.to<n.from){ toast("Date of removal is before the date of start."); return; } if(i!=null) H[i]=n; else H.push(n); H.sort((a,b)=>a.from.localeCompare(b.from)); save(H); });
   dlg.showModal();
@@ -2595,7 +2728,7 @@ function eotCalc(){ const p=proj()||{}, c=CT(), doc=p.dueDate, st=c.startActual|
   const B=S.boq, ex=execMap().m, extraVal=B.reduce((s,b)=>{ const q=c.actualCompletion?num(ex[b.id]):tentQty(b); return s+(b.kind?q*num(b.rate):Math.max(0,q-num(b.qty))*num(b.rate)); },0);
   const tv=num(p.contractValue)||num(c.estCost), per=st&&doc?daysBetween(st,doc)+1:0, extraT=tv&&per?Math.ceil(extraVal/tv*per*1.25):0, extraUse=has(c.eotExtraDays)?num(c.eotExtraDays):extraT;
   const adm=H.reduce((s,h)=>s+h.adm,0), just=Math.round((adm+extraUse)*10)/10, unj=Math.max(0,Math.ceil(delay-just)), rec=Math.min(delay,Math.ceil(just));
-  const lt=c.ldType||(tv&&tv<=1e6?"a":"c"), ldPct=lt==="a"?Math.ceil(unj/7)*1:lt==="b"?Math.ceil(unj/7)*0.5:unj/30*1, ldCap=Math.min(10,ldPct), ld=Math.round(tv*ldCap/100);
+  const lt=c.ldType||(tv&&tv<=1e6?"a":"c"), zr=per<=61?5:per<=183?2:1, ldPct=gccK()==="zmc"?unj/30*zr:lt==="a"?Math.ceil(unj/7)*1:lt==="b"?Math.ceil(unj/7)*0.5:unj/30*1, ldCap=Math.min(10,ldPct), zDone=gccK()==="zmc"?B.reduce((s,b)=>s+num(ex[b.id])*num(b.rate),0):0, ld=Math.round((zDone>0?zDone:tv)*ldCap/100);
   const req=H.reduce((s,h)=>s+h.net,0), pr=(S.letters||[]).filter(l=>l.type==="peot"&&l.status!=="Draft").sort((a,b)=>(a.provTo||"").localeCompare(b.provTo||"")).pop();
   return {p,c,doc,st,act,delay,H,adm,extraVal,tv,per,extraT,extraUse,just,unj,rec,lt,ldPct:ldCap,ld,req,prov:pr,recTo:doc?addDays(doc,rec):""}; }
 const LDTXT={a:"1% of contract value per week or part (repair & maintenance ≤ ₹10 lakh) — GCC cl. 2.2(a)",b:"0.5% of contract value per week or part (new construction) — GCC cl. 2.2(b)",c:"1% of contract value per month, per-day basis (upgradation / other works) — GCC cl. 2.2(c)"};
