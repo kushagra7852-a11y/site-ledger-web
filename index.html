@@ -2717,7 +2717,7 @@ const wtNorm=w=>{ if(!has(w)||w==="") return 1; const x=num(w); return x>1?(x<=1
 const hindWarn=h=>{ const n=String(h.nature||"")+" "+String(h.items||""); const w=[]; if(has(h.wt)&&num(h.wt)>1) w.push(`weightage ${h.wt} entered — read as ${wtNorm(h.wt)} (use 0–1, 1 = work fully stopped)`);
   if(h.attr!=="con"&&/festival|puja|pooja|chhath|chatth|diwali|holi\b|eid|holiday/i.test(n)) w.push("festival / holiday is not a hindrance under GCC cl. 5 — normally contractor's risk");
   if(h.attr!=="con"&&/labou?r|manpower|worker/i.test(n)&&/not available|shortage|unavailab|went|gone/i.test(n)) w.push(`non-availability of labour is the contractor's responsibility (${conCl()}) unless caused by CWC`);
-  if(h.attr==="fm"&&/monsoon|rain/i.test(n)&&!/heavy|abnormal|flood|continuous|cyclone/i.test(n)) w.push("normal monsoon rain is not force majeure — record day-wise heavy / abnormal rain only");
+  if(h.attr==="fm"&&/\b(monsoon|rain|rains|rainfall|rainy)\b/i.test(n)&&!/heavy|abnormal|flood|continuous|cyclone/i.test(n)) w.push("normal monsoon rain is not force majeure — record day-wise heavy / abnormal rain only");
   return w; };
 function hOverlap(h,H,act){ if(h.ovMan||(num(h.overlap)&&!h.ovAuto)) return num(h.overlap); if(!h.from) return 0; const end=h.to||act, i0=H.indexOf(h); let ov=0;
   for(let x=h.from,g=0;x<=end&&g<1500;x=addDays(x,1),g++) if(H.some((k,j)=>k!==h&&k.from&&(k.from<h.from||(k.from===h.from&&j<i0))&&k.from<=x&&(k.to||act)>=x)) ov++; return ov; }
